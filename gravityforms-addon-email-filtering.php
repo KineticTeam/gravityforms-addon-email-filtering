@@ -1,15 +1,14 @@
 <?php
 /**
- * Plugin Name: Gravity Forms Email Blacklist
- * Plugin URI: https://wordpress.org/plugins/gravity-forms-email-blacklist/
- * Description: This plugin adds the ability to set a blacklist of domains on the email field in gravity forms.
- * Version: 2.5.5
- * Author: CrossPeak Software
- * Author URI: https://www.crosspeaksoftware.com/
- * Text Domain: gravity-forms-email-blacklist
- * Domain Path: /languages
- *
- * @package GFEmailBlacklist
+ * Plugin Name: Gravity Forms Email Filtering Add-On
+ * Plugin URI: https://github.com/KineticTeam/gravityforms-addon-email-filtering
+ * Description: Adds the ability to filter domains on the email field. Forked from CrossPeak Software's "Gravity Forms Email Blacklist" plugin.
+ * Version: 3.0.0
+ * Requires PHP: 8.0
+ * Author: Kinetic
+ * Author URI: https://kinetic.com/
+ * License: GPLv2 or later
+ * License URI: http://www.gnu.org/licenses/gpl-2.0.html
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -29,7 +28,7 @@ class GFEmailBlacklist_Bootstrap {
 			return;
 		}
 
-		require_once 'includes/class-gfemailblacklist.php';
+		require_once 'class-gf-email-filtering-addon.php';
 		GFAddOn::register( 'GFEmailBlacklist' );
 	}
 }

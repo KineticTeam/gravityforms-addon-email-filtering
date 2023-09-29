@@ -1,10 +1,4 @@
 <?php
-/**
- * Gravity Forms Email Blacklist Handler.
- *
- * @class   GFEmailBlacklist
- * @package GFEmailBlacklist
- */
 
 defined( 'ABSPATH' ) || exit;
 
