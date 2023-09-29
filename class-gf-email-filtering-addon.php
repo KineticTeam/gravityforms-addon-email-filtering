@@ -1,5 +1,7 @@
 <?php
 
+use Gravity_Forms\Gravity_Forms\Settings\Fields\Textarea;
+
 GFForms::include_addon_framework();
 
 class GFEmailFilteringAddOn extends GFAddOn
@@ -50,6 +52,11 @@ class GFEmailFilteringAddOn extends GFAddOn
 
     private static $_instance = null;
 
+	public $denylist = [];
+	public $settings = [];
+	public $denylist_tooltip = 'Using one entry per line, enter a list of domains or email addresses to filter. You may also include wildcard notations to block top-level domains (e.g., *.ru).';
+	public $validation_tooltip = 'Please enter a default error message if a denied email is submitted. ';
+
     /**
      * Get an instance of this class.
      */
@@ -62,12 +69,23 @@ class GFEmailFilteringAddOn extends GFAddOn
         return self::$_instance;
     }
 
+	/**
+	 * Add tasks or filters here that you want to perform both in the backend and frontend and for ajax requests
+	 */
+	public function init(): void {
+		parent::init();
+
+		$this->settings = get_option('gravityformsaddon_' . $this->_slug . '_settings');
+		$this->getDenylist();
+	}
+
     /**
      * Add tasks or filters here that you want to perform only in admin.
      */
     public function init_admin(): void
     {
         parent::init_admin();
+
         add_action('gform_editor_js', [$this, 'gform_editor_js']);
         add_action('gform_field_advanced_settings', [$this, 'gform_field_advanced_settings'], 10, 2);
         add_filter('gform_tooltips', [$this, 'gform_tooltips']);
@@ -79,6 +97,7 @@ class GFEmailFilteringAddOn extends GFAddOn
     public function init_frontend(): void
     {
         parent::init_frontend();
+
         add_filter('gform_validation', [$this, 'gform_validation']);
     }
 
@@ -94,16 +113,17 @@ class GFEmailFilteringAddOn extends GFAddOn
                 'fields' => [
                     [
                         'label' => __('Global Email Filters', 'gf-email-filtering-addon'),
-                        'type' => 'text',
+                        'type' => 'textarea',
                         'name' => 'default_email_denylist',
-                        'tooltip' => __('Please enter a list of domains (e.g., hotmail.com) or email addresses (e.g., user@aol.com) to filter. You may include wildcard notations to filter top-level domains (e.g., *.cn). This setting can be overridden on individual email fields in the advanced settings.', 'gf-email-filtering-addon'),
+                        'tooltip' => __("{$this->denylist_tooltip} This setting can be overridden on individual email fields in the advanced settings.", 'gf-email-filtering-addon'),
                         'class' => 'medium',
+						'save_callback' => [$this, 'saveDenylist'],
                     ],
                     [
                         'label' => __('Global Validation Message', 'gf-email-filtering-addon'),
                         'type' => 'text',
                         'name' => 'default_email_denylist_error_msg',
-                        'tooltip' => __('Please enter a default error message if a denied email is submitted. This setting can be overridden on individual email fields in the advanced settings.', 'gf-email-filtering-addon'),
+                        'tooltip' => __("{$this->validation_tooltip} This setting can be overridden on individual email fields in the advanced settings.", 'gf-email-filtering-addon'),
                         'class' => 'medium',
                     ],
                 ],
@@ -125,28 +145,27 @@ class GFEmailFilteringAddOn extends GFAddOn
         }
 
         // Get settings for placeholder text.
-        if (get_option('gravityformsaddon_' . $this->_slug . '_settings')) {
-            $settings = get_option('gravityformsaddon_' . $this->_slug . '_settings');
-            $denylist = __('Global Email Filters: ', 'gf-email-filtering-addon') . $settings['default_email_denylist'];
-            $denylist_msg = __('Global Error Message: ', 'gf-email-filtering-addon') . $settings['default_email_denylist_error_msg'];
+        if ($this->settings) {
+            $denylist_placeholder = __('Global Email Filters: ', 'gf-email-filtering-addon') . "\r\n" . implode("\r\n", $this->denylist);
+            $denylist_msg = __('Global Error Message: ', 'gf-email-filtering-addon') . $this->settings['default_email_denylist_error_msg'];
         } else {
-            $denylist = __('Set Email Filters', 'gf-email-filtering-addon');
+            $denylist_placeholder = __('Set Email Filters', 'gf-email-filtering-addon');
             $denylist_msg = __('Set Error Message', 'gf-email-filtering-addon');
         }
 
-        $denylist = esc_attr($denylist);
+        $denylist_placeholder = esc_attr($denylist_placeholder);
         $denylist_msg = esc_attr($denylist_msg);
         $filter_label = esc_html('Filtered Emails', 'gf-email-filtering-addon');
-        $filter_label .= gform_tooltip('form_field_email_filtering', true);
+        $filter_label .= gform_tooltip('form_field_email_filtering', '', true);
         $message_label = esc_html('Filtered Emails Validation Message', 'gf-email-filtering-addon');
-        $message_label .= gform_tooltip('form_field_email_filtering_validation', true);
+        $message_label .= gform_tooltip('form_field_email_filtering_validation', '', true);
 
         echo <<<HTML
 			<li class="email_filtering_setting field_setting">
 				<label for="field_email_filtering">
 					$filter_label
 				</label>
-				<input type="text" id="field_email_filtering" class="fieldwidth-3" size="35" onkeyup="SetFieldProperty('email_filtering', this.value);" placeholder="$denylist">
+				<textarea id="field_email_filtering" class="fieldwidth-3" size="35" onkeyup="SetFieldProperty('email_filtering', this.value);" placeholder="$denylist_placeholder"></textarea>
 			</li>
 
 			<li class="email_filtering_validation field_setting">
@@ -163,8 +182,8 @@ class GFEmailFilteringAddOn extends GFAddOn
      */
     public function gform_tooltips(array $tooltips): array
     {
-        $tooltips['form_field_email_filtering'] = __("Please enter a comma-separated list of domains to filter (e.g., hotmail.com) or email addresses (e.g., user@aol.com). You may also include the wildcard notations to block top-level domains (e.g., *.ru). This will override the globally-defined email filters. Enter 'none' to bypass the global setting and allow all email addresses.", 'gf-email-filtering-addon');
-        $tooltips['form_field_email_filtering_validation'] = __('Please enter an error message if a filtered email is submitted. This will override the globally-defined error message.', 'gf-email-filtering-addon');
+        $tooltips['form_field_email_filtering'] = __("{$this->denylist_tooltip} This will override the globally-defined email filters. Enter 'none' to bypass the global setting and allow all email addresses.", 'gf-email-filtering-addon');
+        $tooltips['form_field_email_filtering_validation'] = __("{$this->validation_tooltip} This will override the globally-defined error message.", 'gf-email-filtering-addon');
         return $tooltips;
     }
 
@@ -196,13 +215,7 @@ class GFEmailFilteringAddOn extends GFAddOn
      */
     public function gform_validation(array $validation_result): array
     {
-        // Collect global settings.
-        $denylist = get_option('gravityformsaddon_' . $this->_slug . '_settings');
-        if (is_array($denylist) && ! empty($denylist['default_email_denylist'])) {
-            $denylist = $denylist['default_email_denylist'];
-        } else {
-            $denylist = '';
-        }
+        $denylist = $this->denylist;
 
         // Collect form results.
         $form = $validation_result['form'];
@@ -277,9 +290,8 @@ class GFEmailFilteringAddOn extends GFAddOn
             // Set the validation message or use the default.
             if (! empty($field['email_filtering_validation'])) {
                 $validation_message = $field['email_filtering_validation'];
-            } elseif (get_option('gravityformsaddon_' . $this->_slug . '_settings')) {
-                $validation_message = get_option('gravityformsaddon_' . $this->_slug . '_settings');
-                $validation_message = $validation_message['default_email_denylist_error_msg'];
+            } elseif ($this->settings) {
+                $validation_message = $this->settings['default_email_denylist_error_msg'];
             } else {
                 $validation_message = __('Sorry, the email address entered is not eligible for this form.', 'gf-email-filtering-addon');
             }
@@ -302,6 +314,27 @@ class GFEmailFilteringAddOn extends GFAddOn
 
         return $validation_result;
     }
+
+	/**
+	 * Normalize the denylist setting upon save
+	 */
+	public function saveDenylist(Textarea $field, string $setting): string {
+		$denylist = str_replace(',', "\r\n", $setting);
+		$denylist = explode("\r\n", $denylist);
+		$denylist = array_map([$this, 'clean_string'], $denylist);
+
+		return implode("\r\n", $denylist);
+	}
+
+	/**
+	 * Set the denylist in an array.
+	 */
+	public function getDenylist(): void {
+		$denylist = $this->settings['default_email_denylist'] ?? '';
+		$denylist = str_replace(',', "\r\n", $denylist);
+		$denylist = explode("\r\n", $denylist);
+		$this->denylist = array_map([$this, 'clean_string'], $denylist);
+	}
 
     /**
      * Convert a string to lowercase and remove extra whitespace.
