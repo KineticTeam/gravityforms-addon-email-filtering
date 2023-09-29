@@ -76,7 +76,7 @@ class GFEmailFilteringAddOn extends GFAddOn
 		parent::init();
 
 		$this->settings = get_option('gravityformsaddon_' . $this->_slug . '_settings');
-		$this->getDenylist();
+		$this->denylist = $this->getDenylist();
 	}
 
     /**
@@ -215,8 +215,6 @@ class GFEmailFilteringAddOn extends GFAddOn
      */
     public function gform_validation(array $validation_result): array
     {
-        $denylist = $this->denylist;
-
         // Collect form results.
         $form = $validation_result['form'];
 
@@ -234,8 +232,10 @@ class GFEmailFilteringAddOn extends GFAddOn
 
             // Collect banned domains from the form and clean up.
             if (! empty($field['email_filtering'])) {
-                $denylist = $field['email_filtering'];
-            }
+				$denylist = $this->getDenylist($field['email_filtering']);
+            } else {
+				$denylist = $this->denylist;
+			}
 
             // Get the domain from user entered email.
             $email = $this->clean_string(rgpost("input_{$field['id']}"));
@@ -258,9 +258,10 @@ class GFEmailFilteringAddOn extends GFAddOn
             }
 
             // Create array of banned domains.
-            $denylist = explode(',', $denylist);
-            $denylist = str_replace('*', '', $denylist);
-            $denylist = array_map([$this, 'clean_string'], $denylist);
+            $denylist = array_map(function ($item) {
+				return str_replace('*', '', $item);
+			}, $denylist);
+
             $denylist = array_filter($denylist);
 
             // No filtered emails, skip.
@@ -327,13 +328,14 @@ class GFEmailFilteringAddOn extends GFAddOn
 	}
 
 	/**
-	 * Set the denylist in an array.
+	 * Get the denylist in an array.
 	 */
-	public function getDenylist(): void {
-		$denylist = $this->settings['default_email_denylist'] ?? '';
+	public function getDenylist(string $denylist = ''): array {
+		$denylist = $denylist ?: $this->settings['default_email_denylist'];
 		$denylist = str_replace(',', "\r\n", $denylist);
 		$denylist = explode("\r\n", $denylist);
-		$this->denylist = array_map([$this, 'clean_string'], $denylist);
+
+		return array_map([$this, 'clean_string'], $denylist);
 	}
 
     /**
