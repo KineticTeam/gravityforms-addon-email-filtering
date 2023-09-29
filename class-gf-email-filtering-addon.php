@@ -1,320 +1,313 @@
 <?php
 
-defined( 'ABSPATH' ) || exit;
-
 GFForms::include_addon_framework();
 
-/**
- * GFEmailBlacklist - extends the GFAddOn class to  allow users to blacklist, block and invalidate submissions to forms
- * using an email input field and based on the email addresses domain.
- */
-class GFEmailBlacklist extends GFAddOn {
+class GFEmailFilteringAddOn extends GFAddOn
+{
+    protected $_version = GF_EMAIL_FILTERING_ADDON_VERSION;
+    protected $_min_gravityforms_version = '1.9.16';
+    protected $_slug = 'gravityforms-addon-email-filtering';
+    protected $_path = 'gravityforms-addon-email-filtering/gravityforms-addon-email-filtering.php';
+    protected $_full_path = __FILE__;
+    protected $_title = 'Gravity Forms Email Filtering';
+    protected $_short_title = 'Email Filtering Add-On';
 
-	protected $_version                  = '2.5.5';
-	protected $_min_gravityforms_version = '1.9';
-	protected $_slug                     = 'gf_email_blacklist';
-	protected $_path                     = 'gravity-forms-email-blacklist/gf_emailblacklist.php';
-	protected $_full_path                = __FILE__;
-	protected $_title                    = 'Gravity Forms Email Blacklist';
-	protected $_short_title              = 'Email Blacklist';
+    /**
+     * Defines the capability needed to access the Add-On settings page.
+     *
+     * @since  2.5.4
+     * @access protected
+     * @var    string $_capabilities_settings_page The capability needed to access the Add-On settings page.
+     */
+    protected $_capabilities_settings_page = 'gravityforms_email_filtering';
 
-	/**
-	 * Defines the capability needed to access the Add-On settings page.
-	 *
-	 * @since  2.5.4
-	 * @access protected
-	 * @var    string $_capabilities_settings_page The capability needed to access the Add-On settings page.
-	 */
-	protected $_capabilities_settings_page = 'gravityforms_email_blacklist';
+    /**
+     * Defines the capability needed to access the Add-On form settings page.
+     *
+     * @since  2.5.4
+     * @access protected
+     * @var    string $_capabilities_form_settings The capability needed to access the Add-On form settings page.
+     */
+    protected $_capabilities_form_settings = 'gravityforms_email_filtering';
 
-	/**
-	 * Defines the capability needed to access the Add-On form settings page.
-	 *
-	 * @since  2.5.4
-	 * @access protected
-	 * @var    string $_capabilities_form_settings The capability needed to access the Add-On form settings page.
-	 */
-	protected $_capabilities_form_settings = 'gravityforms_email_blacklist';
+    /**
+     * Defines the capability needed to uninstall the Add-On.
+     *
+     * @since  2.5.4
+     * @access protected
+     * @var    string $_capabilities_uninstall The capability needed to uninstall the Add-On.
+     */
+    protected $_capabilities_uninstall = 'gravityforms_email_filtering_uninstall';
 
-	/**
-	 * Defines the capability needed to uninstall the Add-On.
-	 *
-	 * @since  2.5.4
-	 * @access protected
-	 * @var    string $_capabilities_uninstall The capability needed to uninstall the Add-On.
-	 */
-	protected $_capabilities_uninstall = 'gravityforms_email_blacklist_uninstall';
+    /**
+     * Defines the capabilities needed for the Post Creation Add-On
+     *
+     * @since  2.5.4
+     * @access protected
+     * @var    array $_capabilities The capabilities needed for the Add-On
+     */
+    protected $_capabilities = ['gravityforms_email_filtering', 'gravityforms_email_filtering_uninstall'];
 
-	/**
-	 * Defines the capabilities needed for the Post Creation Add-On
-	 *
-	 * @since  2.5.4
-	 * @access protected
-	 * @var    array $_capabilities The capabilities needed for the Add-On
-	 */
-	protected $_capabilities = array( 'gravityforms_email_blacklist', 'gravityforms_email_blacklist_uninstall' );
+    private static $_instance = null;
 
+    /**
+     * Get an instance of this class.
+     */
+    public static function get_instance(): GFEmailFilteringAddOn
+    {
+        if (self::$_instance == null) {
+            self::$_instance = new GFEmailFilteringAddOn();
+        }
 
-	private static $_instance = null;
+        return self::$_instance;
+    }
 
-	/**
-	 * Get an instance of this class.
-	 *
-	 * @return GFEmailBlacklist
-	 */
-	public static function get_instance() {
-		if ( null === self::$_instance ) {
-			self::$_instance = new GFEmailBlacklist();
-		}
-		return self::$_instance;
-	}
+    /**
+     * Add tasks or filters here that you want to perform only in admin.
+     */
+    public function init_admin(): void
+    {
+        parent::init_admin();
+        add_action('gform_editor_js', [$this, 'gform_editor_js']);
+        add_action('gform_field_advanced_settings', [$this, 'gform_field_advanced_settings'], 10, 2);
+        add_filter('gform_tooltips', [$this, 'gform_tooltips']);
+    }
 
-	/**
-	 * Add tasks or filters here that you want to perform only in admin.
-	 */
-	public function init_admin() {
-		parent::init_admin();
-		add_action( 'gform_editor_js', array( $this, 'gf_emailblacklist_gform_editor_js' ) );
-		add_action( 'gform_field_advanced_settings', array( $this, 'gf_email_blacklist_field_settings' ), 10, 2 );
-		add_filter( 'gform_tooltips', array( $this, 'gf_emailblacklist_field_tooltips' ) );
-	}
+    /**
+     * Add tasks or filters here that you want to perform only in the front end.
+     */
+    public function init_frontend(): void
+    {
+        parent::init_frontend();
+        add_filter('gform_validation', [$this, 'gform_validation']);
+    }
 
-	/**
-	 * Add tasks or filters here that you want to perform only in the front end.
-	 */
-	public function init_frontend() {
-		parent::init_frontend();
-		add_filter( 'gform_validation', array( $this, 'gf_emailblacklist_validation' ) );
-	}
+    /**
+     * Add the additional settings to the plugin settings page.
+     */
+    public function plugin_settings_fields(): array
+    {
+        return [
+            [
+                'title' => __('Email Filtering Global Settings', 'gf-email-filtering-addon'),
+                'description' => __('If a filtered email is used in any email field, the form will error on submission. You can also globally define a list of filtered emails and/or domains and a custom validation message if a filtered email is submitted. These settings can be overridden on individual email fields in the advanced settings.', 'gf-email-filtering-addon'),
+                'fields' => [
+                    [
+                        'label' => __('Global Email Filters', 'gf-email-filtering-addon'),
+                        'type' => 'text',
+                        'name' => 'default_email_denylist',
+                        'tooltip' => __('Please enter a list of domains (e.g., hotmail.com) or email addresses (e.g., user@aol.com) to filter. You may include wildcard notations to filter top-level domains (e.g., *.cn). This setting can be overridden on individual email fields in the advanced settings.', 'gf-email-filtering-addon'),
+                        'class' => 'medium',
+                    ],
+                    [
+                        'label' => __('Global Validation Message', 'gf-email-filtering-addon'),
+                        'type' => 'text',
+                        'name' => 'default_email_denylist_error_msg',
+                        'tooltip' => __('Please enter a default error message if a denied email is submitted. This setting can be overridden on individual email fields in the advanced settings.', 'gf-email-filtering-addon'),
+                        'class' => 'medium',
+                    ],
+                ],
+            ],
+        ];
+    }
 
-	/**
-	 * Add the additional Email Blacklist
-	 *
-	 * @return array Additional plugin setting fields in the Gravity Forms Settings API.
-	 */
-	public function plugin_settings_fields() {
-		return array(
-			array(
-				'title'       => __( 'Email Blacklist Global Settings', 'gravity-forms-email-blacklist' ),
-				'description' => __( 'Use Email Blacklist to secure your forms. If a blacklisted email is used in any email field, the form will error on submission. You can also globally define a list of blacklisted emails and/or domains and a custom validation message if a blacklisted email is submitted. These settings can be overridden on individual email fields in the advanced settings. <a href="https://www.crosspeaksoftware.com/downloads/gravity-forms-email-blacklist/" target="_blank">View Documentation</a>', 'gravity-forms-email-blacklist' ),
-				'fields'      => array(
-					array(
-						'label'   => __( 'Global Blacklisted Emails', 'gravity-forms-email-blacklist' ),
-						'type'    => 'text',
-						'name'    => 'default_emailblacklist',
-						'tooltip' => __( 'Please enter a comma separated list of blacklisted domains (ex. hotmail.com), email addresses (ex. user@aol.com), and/or include the wildcard notation to block top-level domains (ex. *.com). This setting can be overridden on individual email fields in the advanced settings.', 'gravity-forms-email-blacklist' ),
-						'class'   => 'medium',
-					),
-					array(
-						'label'   => __( 'Global Validation Message', 'gravity-forms-email-blacklist' ),
-						'type'    => 'text',
-						'name'    => 'default_emailblacklist_error_msg',
-						'tooltip' => __( 'Please enter a default error message if a blacklisted email is submitted. This setting can be overridden on individual email fields in the advanced settings.', 'gravity-forms-email-blacklist' ),
-						'class'   => 'medium',
-					),
-				),
-			),
-		);
-	}
+    /**
+     * Add setting to the email field's advanced settings.
+     *
+     * @param integer $position Specifies the position that the settings will be displayed.
+     * @param integer $form_id  The ID of the form from which the entry value was submitted.
+     */
+    public function gform_field_advanced_settings(int $position, ?int $form_id = null): void
+    {
+        // Create settings on position 50 (right after Field Label).
+        if ($position !== 50) {
+            return;
+        }
 
-	/**
-	 * Add email blacklist setting to the email fields advanced settings.
-	 *
-	 * @param integer $position Specifies the position that the settings will be displayed.
-	 * @param integer $form_id  The ID of the form from which the entry value was submitted.
-	 */
-	public function gf_email_blacklist_field_settings( $position, $form_id = null ) {
+        // Get settings for placeholder text.
+        if (get_option('gravityformsaddon_' . $this->_slug . '_settings')) {
+            $settings = get_option('gravityformsaddon_' . $this->_slug . '_settings');
+            $denylist = __('Global Email Filters: ', 'gf-email-filtering-addon') . $settings['default_email_denylist'];
+            $denylist_msg = __('Global Error Message: ', 'gf-email-filtering-addon') . $settings['default_email_denylist_error_msg'];
+        } else {
+            $denylist = __('Set Email Filters', 'gf-email-filtering-addon');
+            $denylist_msg = __('Set Error Message', 'gf-email-filtering-addon');
+        }
 
-		// Get settings for placeholder text.
-		if ( get_option( 'gravityformsaddon_' . $this->_slug . '_settings' ) ) {
-			$validation_message = get_option( 'gravityformsaddon_' . $this->_slug . '_settings' );
-			$emailblacklist     = __( 'Global Email Blacklist: ', 'gravity-forms-email-blacklist' ) . $validation_message['default_emailblacklist'];
-			$emailblacklist_msg = __( 'Global Error Message: ', 'gravity-forms-email-blacklist' ) . $validation_message['default_emailblacklist_error_msg'];
-		} else {
-			$emailblacklist     = __( 'Set Blacklist Emails', 'gravity-forms-email-blacklist' );
-			$emailblacklist_msg = __( 'Set Error Message', 'gravity-forms-email-blacklist' );
-		}
+        $denylist = esc_attr($denylist);
+        $denylist_msg = esc_attr($denylist_msg);
+        $filter_label = esc_html('Filtered Emails', 'gf-email-filtering-addon');
+        $filter_label .= gform_tooltip('form_field_email_filtering', true);
+        $message_label = esc_html('Filtered Emails Validation Message', 'gf-email-filtering-addon');
+        $message_label .= gform_tooltip('form_field_email_filtering_validation', true);
 
-		// Create settings on position 50 (right after Field Label).
-		if ( 50 === $position ) {
-			?>
-		<li class="email_blacklist_setting field_setting">
-			<label for="field_email_blacklist">
-				<?php esc_html_e( 'Blacklisted Emails', 'gravity-forms-email-blacklist' ); ?>
-				<?php gform_tooltip( 'form_field_email_blacklist' ); ?>
-			</label>
-			<input type="text" id="field_email_blacklist" class="fieldwidth-3" size="35" onkeyup="SetFieldProperty('email_blacklist', this.value);" placeholder="<?php echo esc_attr( $emailblacklist ); ?>">
-		</li>
+        echo <<<HTML
+			<li class="email_filtering_setting field_setting">
+				<label for="field_email_filtering">
+					$filter_label
+				</label>
+				<input type="text" id="field_email_filtering" class="fieldwidth-3" size="35" onkeyup="SetFieldProperty('email_filtering', this.value);" placeholder="$denylist">
+			</li>
 
-		<li class="email_blacklist_validation field_setting">
-			<label for="field_email_blacklist_validation">
-				<?php esc_html_e( 'Blacklisted Emails Validation Message', 'gravity-forms-email-blacklist' ); ?>
-				<?php gform_tooltip( 'form_field_email_blacklist_validation' ); ?>
-			</label>
-			<input type="text" id="field_email_blacklist_validation" class="fieldwidth-3" size="35" onkeyup="SetFieldProperty('email_blacklist_validation', this.value);" placeholder="<?php echo esc_attr( $emailblacklist_msg ); ?>">
-		</li>
-			<?php
-		}
-	}
+			<li class="email_filtering_validation field_setting">
+				<label for="field_email_filtering_validation">
+					$message_label
+				</label>
+				<input type="text" id="field_email_filtering_validation" class="fieldwidth-3" size="35" onkeyup="SetFieldProperty('email_filtering_validation', this.value);" placeholder="$denylist_msg">
+			</li>
+		HTML;
+    }
 
-	/**
-	 * Add the additional tooltips to the new fields.
-	 *
-	 * @param array $tooltips tooltip associative array.
-	 * @return array modified tooltips
-	 */
-	public function gf_emailblacklist_field_tooltips( $tooltips ) {
-		$tooltips['form_field_email_blacklist']            = __( "Please enter a comma separated list of blacklisted domains, (ex. hotmail.com), email addresses (ex. user@aol.com), and/or include the wildcard notation to block top-level domains (ex. *.com). This will override the globally defined blacklisted emails setting. Enter 'none' to bypass the global setting and allow all email addresses.", 'gravity-forms-email-blacklist' );
-		$tooltips['form_field_email_blacklist_validation'] = __( 'Please enter an error message if a blacklisted email is submitted. This will override the globally defined error message.', 'gravity-forms-email-blacklist' );
-		return $tooltips;
-	}
+    /**
+     * Add the additional tooltips to the new fields.
+     */
+    public function gform_tooltips(array $tooltips): array
+    {
+        $tooltips['form_field_email_filtering'] = __("Please enter a comma-separated list of domains to filter (e.g., hotmail.com) or email addresses (e.g., user@aol.com). You may also include the wildcard notations to block top-level domains (e.g., *.ru). This will override the globally-defined email filters. Enter 'none' to bypass the global setting and allow all email addresses.", 'gf-email-filtering-addon');
+        $tooltips['form_field_email_filtering_validation'] = __('Please enter an error message if a filtered email is submitted. This will override the globally-defined error message.', 'gf-email-filtering-addon');
+        return $tooltips;
+    }
 
-	/**
-	 * Inject Javascript into the form editor page for the email blacklist fields.
-	 */
-	public function gf_emailblacklist_gform_editor_js() {
-		?>
-	<script type='text/javascript'>
-		jQuery(document).ready(function($) {
-			// Alter the setting offered for the email input type.
-			fieldSettings["email"] = fieldSettings["email"] + ", .email_blacklist_setting, .email_blacklist_validation"; // this will show all fields that Paragraph Text field shows plus my custom setting
+    /**
+     * Inject JavaScript into the form editor page.
+     */
+    public function gform_editor_js(): void
+    {
+        echo <<<HTML
+			<script>
+				jQuery(document).ready(function($) {
+					// Alter the setting offered for the email input type.
+					// This will show all fields that the email field shows plus the custom settings
+					fieldSettings["email"] += ", .email_filtering_setting, .email_filtering_validation";
 
-			// Binding to the load field settings event to initialize the checkbox.
-			$(document).bind("gform_load_field_settings", function(event, field, form){
-				$("#field_email_blacklist").val(field["email_blacklist"]);
-				$("#field_email_blacklist_validation").val(field["email_blacklist_validation"]);
-			});
-		});
-	</script>
-		<?php
-	}
+					// Binding to the load field settings event to initialize custom settings.
+					$(document).bind("gform_load_field_settings", function(event, field, form){
+						$("#field_email_filtering").val(field["email_filtering"]);
+						$("#field_email_filtering_validation").val(field["email_filtering_validation"]);
+					});
+				});
+			</script>
+		HTML;
+    }
 
-	/**
-	 * Add email blacklist to gforms validation function.
-	 *
-	 * @resources: https://docs.gravityforms.com/using-gform-validation-hook/
-	 *
-	 * @param  array $validation_result Contains the validation result and the current.
-	 *
-	 * @return array The field validation results.
-	 */
-	public function gf_emailblacklist_validation( $validation_result ) {
+    /**
+     * Add email filtering to gforms validation function.
+     * @see https://docs.gravityforms.com/using-gform-validation-hook/
+     */
+    public function gform_validation(array $validation_result): array
+    {
+        // Collect global settings.
+        $denylist = get_option('gravityformsaddon_' . $this->_slug . '_settings');
+        if (is_array($denylist) && ! empty($denylist['default_email_denylist'])) {
+            $denylist = $denylist['default_email_denylist'];
+        } else {
+            $denylist = '';
+        }
 
-		// Collect global settings.
-		$blacklist = get_option( 'gravityformsaddon_' . $this->_slug . '_settings' );
-		if ( is_array( $blacklist ) && ! empty( $blacklist['default_emailblacklist'] ) ) {
-			$blacklist = $blacklist['default_emailblacklist'];
-		} else {
-			$blacklist = '';
-		}
+        // Collect form results.
+        $form = $validation_result['form'];
 
-		// Collect form results.
-		$form = $validation_result['form'];
+        // Loop through results.
+        foreach ($form['fields'] as &$field) {
+            // If this is not an email field, skip.
+            if (RGFormsModel::get_input_type($field) !== 'email') {
+                continue;
+            }
 
-		// Loop through results.
-		foreach ( $form['fields'] as &$field ) {
+            // If the field is hidden by GF conditional logic, skip.
+            if (RGFormsModel::is_field_hidden($form, $field, [])) {
+                continue;
+            }
 
-			// If this is not an email field, skip.
-			if ( 'email' !== RGFormsModel::get_input_type( $field ) ) {
-				continue;
-			}
+            // Collect banned domains from the form and clean up.
+            if (! empty($field['email_filtering'])) {
+                $denylist = $field['email_filtering'];
+            }
 
-			// If the field is hidden by GF conditional logic, skip.
-			if ( RGFormsModel::is_field_hidden( $form, $field, array() ) ) {
-				continue;
-			}
+            // Get the domain from user entered email.
+            $email = $this->clean_string(rgpost("input_{$field['id']}"));
+            $domain = $this->clean_string(rgar(explode('@', $email), 1));
+            $tld = strrchr($domain, '.');
 
-			// Collect banned domains from backend and clean up.
-			if ( ! empty( $field['email_blacklist'] ) ) { // collect per form settings.
-				$blacklist = $field['email_blacklist'];
-			}
+            /**
+             * Filter to allow third-party plugins short circuit filtering validation.
+             *
+             * @since 2.5.1
+             * @param bool   false      Default value.
+             * @param array  $field     The Field Object.
+             * @param string $email     The email entered in the input.
+             * @param string $domain    The full domain entered in the input.
+             * @param string $tld       The top level domain entered in the input.
+             * @param array  $denylist  List of the blocked emailed/domains.
+             */
+            if (apply_filters('gf_email_filtering_validation_short_circuit', false, $field, $email, $domain, $tld, $denylist)) {
+                continue;
+            }
 
-			// Get the domain from user entered email.
-			$email  = $this->gf_emailblacklist_clean( rgpost( "input_{$field['id']}" ) );
-			$domain = $this->gf_emailblacklist_clean( rgar( explode( '@', $email ), 1 ) );
-			$tld    = strrchr( $domain, '.' );
+            // Create array of banned domains.
+            $denylist = explode(',', $denylist);
+            $denylist = str_replace('*', '', $denylist);
+            $denylist = array_map([$this, 'clean_string'], $denylist);
+            $denylist = array_filter($denylist);
 
-			/**
-			 * Filter to allow third party plugins short circuit blacklist validation.
-			 *
-			 * @since 2.5.1
-			 * @param bool   false      Default value.
-			 * @param array  $field     The Field Object.
-			 * @param string $email     The email entered in the input.
-			 * @param string $domain    The full domain entered in the input.
-			 * @param string $tld       The top level domain entered in the input.
-			 * @param array  $blacklist List of the blocked emailed/domains.
-			 */
-			if ( apply_filters( 'gf_blacklist_validation_short_circuit', false, $field, $email, $domain, $tld, $blacklist ) ) {
-				continue;
-			}
+            // No filtered emails, skip.
+            if (empty($denylist)) {
+                continue;
+            }
 
-			// Create array of banned domains.
-			$blacklist = explode( ',', $blacklist );
-			$blacklist = str_replace( '*', '', $blacklist );
-			$blacklist = array_map( array( $this, 'gf_emailblacklist_clean' ), $blacklist );
-			$blacklist = array_filter( $blacklist );
+            // If the email, domain or tld isn't denied, skip.
+            if (! in_array($email, $denylist, true) && ! in_array($domain, $denylist, true) && ! in_array($tld, $denylist, true)) {
+                continue;
+            }
 
-			// No blacklisted email, skip.
-			if ( empty( $blacklist ) ) {
-				continue;
-			}
+            /**
+             * Filter to allow third party plugins to set the email filtering validation.
+             *
+             * @since 2.5.1
+             * @param bool   false      Default value.
+             * @param array  $field     The Field Object.
+             * @param string $email     The email entered in the input.
+             * @param string $domain    The full domain entered in the input.
+             * @param string $tld       The top level domain entered in the input.
+             * @param array  $denylist  List of the blocked emailed/domains.
+             */
+            $validation_result['is_valid'] = apply_filters('gf_email_filtering_is_valid', false, $field, $email, $domain, $tld, $denylist);
+            $field['failed_validation'] = true;
 
-			// if the email, domain or top-level domain isn't blacklisted, skip.
-			if ( ! in_array( $email, $blacklist, true ) && ! in_array( $domain, $blacklist, true ) && ! in_array( $tld, $blacklist, true ) ) {
-				continue;
-			}
+            // Set the validation message or use the default.
+            if (! empty($field['email_filtering_validation'])) {
+                $validation_message = $field['email_filtering_validation'];
+            } elseif (get_option('gravityformsaddon_' . $this->_slug . '_settings')) {
+                $validation_message = get_option('gravityformsaddon_' . $this->_slug . '_settings');
+                $validation_message = $validation_message['default_email_denylist_error_msg'];
+            } else {
+                $validation_message = __('Sorry, the email address entered is not eligible for this form.', 'gf-email-filtering-addon');
+            }
 
-			/**
-			 * Filter to allow third party plugins to set the email blacklist validation.
-			 *
-			 * @since 2.5.1
-			 * @param bool   false      Default value.
-			 * @param array  $field     The Field Object.
-			 * @param string $email     The email entered in the input.
-			 * @param string $domain    The full domain entered in the input.
-			 * @param string $tld       The top level domain entered in the input.
-			 * @param array  $blacklist List of the blocked emailed/domains.
-			 */
-			$validation_result['is_valid'] = apply_filters( 'gf_blacklist_is_valid', false, $field, $email, $domain, $tld, $blacklist );
-			$field['failed_validation']    = true;
+            /**
+             * Filter to allow third party plugins to set the email filtering validation.
+             *
+             * @since 2.5.1
+             * @param bool   $validation_message The custom validation method.
+             * @param array  $field              The Field Object.
+             * @param string $email              The email entered in the input.
+             * @param string $domain             The full domain entered in the input.
+             * @param string $tld                The top level domain entered in the input.
+             * @param array  $denylist           List of the blocked emailed/domains.
+             */
+            $field['validation_message'] = apply_filters('gf_email_filtering_validation_message', $validation_message, $field, $email, $domain, $tld, $denylist);
+        }
 
-			// Set the validation message or use the default.
-			if ( ! empty( $field['email_blacklist_validation'] ) ) {
-				$validation_message = $field['email_blacklist_validation'];
-			} elseif ( get_option( 'gravityformsaddon_' . $this->_slug . '_settings' ) ) {
-				$validation_message = get_option( 'gravityformsaddon_' . $this->_slug . '_settings' );
-				$validation_message = $validation_message['default_emailblacklist_error_msg'];
-			} else {
-				$validation_message = __( 'Sorry, the email address entered is not eligible for this form.', 'gravity-forms-email-blacklist' );
-			}
+        $validation_result['form'] = $form;
 
-			/**
-			 * Filter to allow third party plugins to set the email blacklist validation.
-			 *
-			 * @since 2.5.1
-			 * @param bool   $validation_message The custom validation method.
-			 * @param array  $field              The Field Object.
-			 * @param string $email              The email entered in the input.
-			 * @param string $domain             The full domain entered in the input.
-			 * @param string $tld                The top level domain entered in the input.
-			 * @param array  $blacklist          List of the blocked emailed/domains.
-			 */
-			$field['validation_message'] = apply_filters( 'gf_blacklist_validation_message', $validation_message, $field, $email, $domain, $tld, $blacklist );
-		}
+        return $validation_result;
+    }
 
-		$validation_result['form'] = $form;
-		return $validation_result;
-	}
-
-	/**
-	 * Convert a sting to lowercase and remove extra whitespace. Thanks to @ractoon, @rscoates.
-	 *
-	 * @param string $string A string to sanitize.
-	 * @return string Sanitize string
-	 */
-	protected function gf_emailblacklist_clean( $string ) {
-		return strtolower( trim( $string ) );
-	}
-
+    /**
+     * Convert a string to lowercase and remove extra whitespace.
+     */
+    protected function clean_string(string $string): string
+    {
+        return strtolower(trim($string));
+    }
 }
